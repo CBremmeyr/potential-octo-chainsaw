@@ -95,21 +95,25 @@ int main(int argc, char* args[]){
 
         while(1) {
             const int pidIndex = 0;
+            const int writeIndex = pidIndex;
+            const int readIndex = numComps-1;
 
-            passToken(fd[pidIndex][WRITE], &token);
+            passToken(fd[writeIndex][WRITE], &token);
 
-            while(getToken(fd[numComps-1][READ], &token) != 0);
+            while(getToken(fd[readIndex][READ], &token) != 0);
         }
     }
 
     // Children processes
     else {
-        int pidIndex = pidToIndex(pids, numComps);
+        const int pidIndex = pidToIndex(pids, numComps);
+        const int writeIndex = pidIndex;
+        const int readIndex = pidIndex-1;
 
         while(1) {
 
             // Wait to receive token
-            while(getToken(fd[pidIndex-1][READ], &token) != 0);
+            while(getToken(fd[readIndex][READ], &token) != 0);
 
             // Process token
             if(token.dest == getpid()) {
@@ -117,7 +121,7 @@ int main(int argc, char* args[]){
             }
 
             // Give token to next node
-            passToken(fd[pidIndex][WRITE], &token);
+            passToken(fd[writeIndex][WRITE], &token);
         }
     }
 
