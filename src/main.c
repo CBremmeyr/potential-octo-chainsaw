@@ -26,19 +26,19 @@ typedef struct{
     char data[MAX_STR_LEN];
 } token_t;
 
-int createNetwork(int n, pid_t *pids, int **fd);
-int createNetworkHelper(int n, pid_t *pids, int **fd);
+int createNetwork(int len, pid_t *pids, int **fd);
+int spawn(int len, pid_t *pids);
+void fixPipeLeaks(pid_t *pids, int **fd, int len);
+
 int getToken(int readFd, token_t *token);
 int passToken(int writeFd, token_t *token);
 int pidToIndex(pid_t *pids, int len);
 
 int main(int argc, char* args[]){
 
-    int **fd;
-    int ret = 0;
+    int **fd = NULL;
     int numComps = 0;
     pid_t *pids = NULL;
-    pid_t ogParent = getpid();
     token_t token = {0};
 
     // Check if user gave at least one comand line argument
@@ -62,18 +62,32 @@ int main(int argc, char* args[]){
         exit(1);
     }
 
+    // Make network
+    pids = malloc(numComps * sizeof(pid_t));
+    if(pids == NULL) {
+        printf("Error: out of memory\n");
+        exit(1);
+    }
+
     // Make 2-D array of file descriptors
-    fd = (int **) malloc(numComps * sizeof(int *));  // Array of pointer to each sub array
+    fd = (int **) malloc(numComps * sizeof(int *));
+    if(fd == NULL) {
+        printf("Error: out of memory\n");
+        exit(1);
+    }
     for(int i=0; i < numComps; i++) {
-        fd[i] = (int *) malloc(2 * sizeof(int));    // Allocate each sub array
+        fd[i] = malloc(2 * sizeof(int));
+        if(fd[i] == NULL) {
+            printf("Error: out of memory\n");
+            exit(1);
+        }
     }
 
     // Make network
-    pids = malloc(numComps * sizeof(pid_t));
-    ret = createNetwork(numComps, pids, fd);
+    createNetwork(numComps, pids, fd);  // TODO check return for error
 
     // UI process
-    if(ogParent == getpid()) {
+    if(pids[0] == getpid()) {
         int pidIndex = pidToIndex(pids, numComps);
         printf("OG Parent: PID=%d, fd=%X\n", getpid(), fd[pidIndex]);
         printf("\t fd[0]=%p fd[1]=%X\n\n", fd[pidIndex][0], fd[pidIndex][1]);
@@ -109,6 +123,9 @@ int main(int argc, char* args[]){
     }
 
     free(pids);
+    for(int i=0; i < numComps; i++) {
+        free(fd[i]);
+    }
     free(fd);
 
     return 0;
@@ -124,70 +141,26 @@ int pidToIndex(pid_t *pids, int len) {
     return -1;
 }
 
-int createNetwork(int n, pid_t *pids, int **fd) {
+int createNetwork(int len, pid_t *pids, int **fd) {
 
-    // If invalid input
-    if(n < 1 || pids == NULL) {
+    if(len < 2) {
+        printf("A network must have at least two computers\n");
         return -1;
     }
 
-    // Make most of network
-    if(createNetworkHelper(n, pids, fd)) {
-        return -1;
+    // Make all needed pipes
+    for(int i=0; i < len; i++) {
+        pipe(fd[i]);
     }
 
-    // Make last pipe in ring
-    if(pipe(fd[n-1]) < 0) {
-        return -1;
-    }
-
-    // Close unused end of pipe
-    close(fd[n-1][WRITE]);
-
-
-    // TODO: Plump last pipe
-
-    return 0;
-}
-
-int createNetworkHelper(int n, pid_t *pids, int **fd) {
-
-    pid_t curPid;
+    // Put parent PID in pid table
     pids[0] = getpid();
 
-    printf("Computer %d:PID = %d\n", n, pids[0]);
+    // Make children processes
+    spawn(len-1, &pids[1]);
 
-    if(n-1 > 0) {
-
-        // Make pipes
-        if(pipe(fd[0]) < 0) {
-            return -1;
-        }
-
-        curPid = fork();
-
-        // Fork error
-        if(curPid < 0) {
-            return -1;
-        }
-
-        // Child process
-        else if (curPid == 0) {
-
-            // Close unused file descriptors
-            close(fd[0][WRITE]);
-            close(STDIN_FILENO);
-
-            return createNetworkHelper(n-1, &pids[1], &fd[1]);
-        }
-
-        // Parent process
-        else {
-
-            // Close unused file (read) side of the pipe
-            close(fd[0][READ]);
-        }
-    }
+    // Make network out of pipes
+    fixPipeLeaks(pids, fd, len);
 
     return 0;
 }
@@ -239,5 +212,56 @@ int passToken(int writeFd, token_t *token) {
         return -1;
     }
     return 0;
+}
+
+// return 0 is good, -1 bad
+int spawn(int len, pid_t *pids) {
+
+    if(len > 0) {
+
+        pid_t pid = fork();
+
+        // Fork error checking
+        if(pid < 0) {
+            return -1;
+        }
+
+        // If child process
+        if(pid == 0) {
+            pids[0] = getpid();
+            return spawn(len-1, &(pids[1]));
+        }
+    }
+
+    return 0;
+}
+
+void fixPipeLeaks(pid_t *pids, int **fd, int len) {
+
+    // For each process close all un-needed pipes
+    for(int i=0; i < len; i++) {
+        if(pids[i] == getpid()){
+
+            // fd[i-1] is pipe to read from (not for OG parent)
+            // fd[i] is pipe to write to
+            // close rest of pipes
+            for(int j=0; j < len; j++) {
+                int readIndex = i-1;
+                if(readIndex < 0) {
+                    readIndex = len-1;
+                }
+
+                // Close read side
+                if(j != readIndex) {
+                    close(fd[j][READ]);
+                }
+
+                // Close write side
+                if( j != i) {
+                    close(fd[j][WRITE]);
+                }
+            }
+        }
+    }
 }
 
