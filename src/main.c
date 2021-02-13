@@ -75,7 +75,8 @@ int main(int argc, char* args[]){
     // UI process
     if(ogParent == getpid()) {
         int pidIndex = pidToIndex(pids, numComps);
-        printf("og parent\n");
+        printf("OG Parent: PID=%d, fd=%X\n", getpid(), fd[pidIndex]);
+        printf("\t fd[0]=%p fd[1]=%X\n\n", fd[pidIndex][0], fd[pidIndex][1]);
         token.dest = 3;
         strcpy(token.data, "hello there");
         passToken(fd[pidIndex][WRITE], &token);
@@ -85,7 +86,8 @@ int main(int argc, char* args[]){
     // Children processes
     else {
         int pidIndex = pidToIndex(pids, numComps);
-        printf("PID = %d : fd = %x\n", getpid(), (int)fd[pidIndex]);
+        printf("CHILD: PID=%d : fd=%X\n", getpid(), fd[pidIndex]);
+        printf("\t fd[0]=%p fd[1]=%X\n\n", fd[pidIndex][0], fd[pidIndex][1]);
         while(1) {
 
             // Wait to receive token
