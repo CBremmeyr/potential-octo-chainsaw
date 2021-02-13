@@ -36,6 +36,7 @@ int pidToIndex(pid_t *pids, int len);
 
 int main(int argc, char* args[]){
 
+
     int **fd = NULL;
     int numComps = 0;
     pid_t *pids = NULL;
@@ -88,24 +89,27 @@ int main(int argc, char* args[]){
 
     // UI process
     if(pids[0] == getpid()) {
-        int pidIndex = pidToIndex(pids, numComps);
-        printf("OG Parent: PID=%d, fd=%X\n", getpid(), fd[pidIndex]);
-        printf("\t fd[0]=%p fd[1]=%X\n\n", fd[pidIndex][0], fd[pidIndex][1]);
+
         token.dest = 3;
-        strcpy(token.data, "hello there");
-        passToken(fd[pidIndex][WRITE], &token);
-        while(1);
+        strcpy(token.data, "hello there pdidy, how you doin' ;)");
+
+        while(1) {
+            const int pidIndex = 0;
+
+            passToken(fd[pidIndex][WRITE], &token);
+
+            while(getToken(fd[numComps-1][READ], &token) != 0);
+        }
     }
 
     // Children processes
     else {
         int pidIndex = pidToIndex(pids, numComps);
-        printf("CHILD: PID=%d : fd=%X\n", getpid(), fd[pidIndex]);
-        printf("\t fd[0]=%p fd[1]=%X\n\n", fd[pidIndex][0], fd[pidIndex][1]);
+
         while(1) {
 
             // Wait to receive token
-            while(getToken(fd[pidIndex][READ], &token) != 0);
+            while(getToken(fd[pidIndex-1][READ], &token) != 0);
 
             // Process token
             if(token.dest == getpid()) {
@@ -113,12 +117,7 @@ int main(int argc, char* args[]){
             }
 
             // Give token to next node
-            if(passToken(fd[pidIndex][WRITE], &token) == 0) {
-                printf("PID = %d : passToken() successful\n", getpid());
-            }
-            else {
-                printf("PID = %d : passToken() failded\n", getpid());
-            }
+            passToken(fd[pidIndex][WRITE], &token);
         }
     }
 
@@ -176,8 +175,8 @@ int createNetwork(int len, pid_t *pids, int **fd) {
 int getToken(int readFd, token_t *token) {
 
     // Read from pipe
-    ssize_t s = read(readFd, (void *) token, sizeof(token));
-    if(s != sizeof(token)) {
+    ssize_t s = read(readFd, (void *) token, sizeof(token_t));
+    if(s != sizeof(token_t)) {
         return -1;
     }
 
@@ -205,10 +204,10 @@ int passToken(int writeFd, token_t *token) {
     printf("Token.dest = %d, .data = %s\n", token->dest, token->data);
 
     // Write to pipe
-    size_t s = write(writeFd, (const void *) token, sizeof(token));
+    size_t s = write(writeFd, (const void *) token, sizeof(token_t));
 
-    // Check if data was writen
-    if(s != sizeof(token)) {
+    // Check if data was written
+    if(s != sizeof(token_t)) {
         return -1;
     }
     return 0;
@@ -246,6 +245,7 @@ void fixPipeLeaks(pid_t *pids, int **fd, int len) {
             // fd[i] is pipe to write to
             // close rest of pipes
             for(int j=0; j < len; j++) {
+
                 int readIndex = i-1;
                 if(readIndex < 0) {
                     readIndex = len-1;
@@ -253,11 +253,13 @@ void fixPipeLeaks(pid_t *pids, int **fd, int len) {
 
                 // Close read side
                 if(j != readIndex) {
+                    printf("i = %d: close read %d\n", i, j);
                     close(fd[j][READ]);
                 }
 
                 // Close write side
-                if( j != i) {
+                if(j != i) {
+                    printf("i = %d: close write %d\n", i, j);
                     close(fd[j][WRITE]);
                 }
             }
