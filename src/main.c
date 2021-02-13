@@ -26,14 +26,15 @@ typedef struct{
     char data[MAX_STR_LEN];
 } token_t;
 
-int createNetwork(int n, pid_t *pids, int *fd);
-int createNetworkHelper(int n, pid_t *pids, int *fd);
+int createNetwork(int n, pid_t *pids, int **fd);
+int createNetworkHelper(int n, pid_t *pids, int **fd);
 int getToken(int readFd, token_t *token);
 int passToken(int writeFd, token_t *token);
+int pidToIndex(pid_t *pids, int len);
 
 int main(int argc, char* args[]){
 
-    int fd[2];
+    int **fd;
     int ret = 0;
     int numComps = 0;
     pid_t *pids = NULL;
@@ -61,32 +62,42 @@ int main(int argc, char* args[]){
         exit(1);
     }
 
+    // Make 2-D array of file descriptors
+    fd = (int **) malloc(numComps * sizeof(int *));  // Array of pointer to each sub array
+    for(int i=0; i < numComps; i++) {
+        fd[i] = (int *) malloc(2 * sizeof(int));    // Allocate each sub array
+    }
+
     // Make network
     pids = malloc(numComps * sizeof(pid_t));
     ret = createNetwork(numComps, pids, fd);
 
     // UI process
     if(ogParent == getpid()) {
+        int pidIndex = pidToIndex(pids, numComps);
         printf("og parent\n");
         token.dest = 3;
         strcpy(token.data, "hello there");
-        passToken(fd[WRITE], &token);
+        passToken(fd[pidIndex][WRITE], &token);
         while(1);
     }
-    else {
 
+    // Children processes
+    else {
+        int pidIndex = pidToIndex(pids, numComps);
+        printf("PID = %d : fd = %x\n", getpid(), (int)fd[pidIndex]);
         while(1) {
 
             // Wait to receive token
-            while(getToken(fd[READ], &token) != 0);
+            while(getToken(fd[pidIndex][READ], &token) != 0);
 
             // Process token
             if(token.dest == getpid()) {
-                printf("");
+                printf("%s", token.data);
             }
 
             // Give token to next node
-            if(passToken(fd[WRITE], &token) == 0) {
+            if(passToken(fd[pidIndex][WRITE], &token) == 0) {
                 printf("PID = %d : passToken() successful\n", getpid());
             }
             else {
@@ -96,34 +107,48 @@ int main(int argc, char* args[]){
     }
 
     free(pids);
+    free(fd);
 
     return 0;
 }
 
-int createNetwork(int n, pid_t *pids, int *fd) {
+int pidToIndex(pid_t *pids, int len) {
+    pid_t pid = getpid();
+    for(int i=0; i < len; i++) {
+        if(pids[i] == pid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int createNetwork(int n, pid_t *pids, int **fd) {
 
     // If invalid input
     if(n < 1 || pids == NULL) {
         return -1;
     }
 
-    // Make last pipe in ring
-    if(pipe(fd) < 0) {
-        return -1;
-    }
-
-    // Close unused end of pipe
-    close(fd[WRITE]);
-
     // Make most of network
     if(createNetworkHelper(n, pids, fd)) {
         return -1;
     }
 
+    // Make last pipe in ring
+    if(pipe(fd[n-1]) < 0) {
+        return -1;
+    }
+
+    // Close unused end of pipe
+    close(fd[n-1][WRITE]);
+
+
+    // TODO: Plump last pipe
+
     return 0;
 }
 
-int createNetworkHelper(int n, pid_t *pids, int *fd) {
+int createNetworkHelper(int n, pid_t *pids, int **fd) {
 
     pid_t curPid;
     pids[0] = getpid();
@@ -133,7 +158,7 @@ int createNetworkHelper(int n, pid_t *pids, int *fd) {
     if(n-1 > 0) {
 
         // Make pipes
-        if(pipe(fd) < 0) {
+        if(pipe(fd[0]) < 0) {
             return -1;
         }
 
@@ -148,17 +173,17 @@ int createNetworkHelper(int n, pid_t *pids, int *fd) {
         else if (curPid == 0) {
 
             // Close unused file descriptors
-            close(fd[WRITE]);
+            close(fd[0][WRITE]);
             close(STDIN_FILENO);
 
-            return createNetworkHelper(n-1, &pids[1], fd);
+            return createNetworkHelper(n-1, &pids[1], &fd[1]);
         }
 
         // Parent process
         else {
 
             // Close unused file (read) side of the pipe
-            close(fd[READ]);
+            close(fd[0][READ]);
         }
     }
 
