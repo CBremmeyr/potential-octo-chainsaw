@@ -35,13 +35,13 @@ typedef struct {
     char str[MAX_STR_LEN];
 } userInput_t;
 
-enum TKN_STAT{EMPTY, FULL, RETURNING};
+typdef enum TKN_STAT{EMPTY, FULL, RETURNING} tkn_stat_t;
 
 int createNetwork(int len, pid_t *pids, int **fd);
 int spawn(int len, pid_t *pids);
 void fixPipeLeaks(pid_t *pids, int **fd, int len);
 
-enum TKN_STAT checkToken(token_t *token);
+tkn_stat_t checkToken(token_t *token);
 int getToken(int readFd, token_t *token);
 int getTokenNB(int readFd, token_t *token);
 int passToken(int writeFd, token_t *token);
@@ -212,7 +212,13 @@ int main(int argc, char* args[]){
     return 0;
 }
 
-
+/**
+ * Thread funciton to get input from user
+ *
+ * param *arg - pointer to userInput_t to hold data passed between thread and parent
+ *
+ * return NULL (needed to work with pthreads)
+ */
 void *getUserInput(void *arg) {
     userInput_t userInput = *((userInput_t *) arg);
     char tempStr[MAX_STR_LEN] = {0};
@@ -234,7 +240,10 @@ void *getUserInput(void *arg) {
     return NULL;
 }
 
-enum TKN_STAT checkToken(token_t *token){
+/**
+ *
+ */
+tkn_stat_t checkToken(token_t *token) {
     if(token->dest == 0) {
         if(strlen(token->data) == 0) {
             return EMPTY;
@@ -244,6 +253,9 @@ enum TKN_STAT checkToken(token_t *token){
     return FULL;
 }
 
+/**
+ *
+ */
 int pidToIndex(pid_t *pids, int len) {
     pid_t pid = getpid();
     for(int i=0; i < len; i++) {
@@ -254,6 +266,15 @@ int pidToIndex(pid_t *pids, int len) {
     return -1;
 }
 
+/**
+ * Creates child processes and plumps them to create simulated token-ring network
+ *
+ * param len - number of processes in network
+ * param *pids - table of process PIDs
+ * param **fd - 2D array of pipe file descriptors
+ *
+ * return 0 on success, -1 on fail
+ */
 int createNetwork(int len, pid_t *pids, int **fd) {
 
     if(len < 2) {
@@ -371,7 +392,15 @@ int passToken(int writeFd, token_t *token) {
     return 0;
 }
 
-// return 0 is good, -1 bad
+/**
+ *  Spawns given number of child processes in a linear decendency
+ *
+ *  param len - number of child processes to make
+ *  param *pids - table to be filled that maps each PID to a virtual PID (index),
+ *          pids must point to at least len*sizeof(pid_t) bytes
+ *
+ * return 0 if successful, -1 if failure
+ */
 int spawn(int len, pid_t *pids) {
 
     if(len > 0) {
@@ -393,6 +422,13 @@ int spawn(int len, pid_t *pids) {
     return 0;
 }
 
+/**
+ * Closes pipes that are inherrited by processes that the process should not interact with.
+ *
+ * param *pids - table of virtual PIDs to accual PID
+ * param **fd - 2D array of file descriptors for pipes
+ * param len - Number of processes in simulated token-ring network
+ */
 void fixPipeLeaks(pid_t *pids, int **fd, int len) {
 
     // For each process close all un-needed pipes
