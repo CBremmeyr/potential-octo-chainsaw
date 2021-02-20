@@ -56,7 +56,6 @@ volatile bool userInputDone;
 
 int main(int argc, char* args[]){
 
-
     int **fd = NULL;
     int numComps = 0;
     pid_t *pids = NULL;
@@ -105,9 +104,12 @@ int main(int argc, char* args[]){
     }
 
     // Make network
-    createNetwork(numComps, pids, fd);  // TODO check return for error
+    if(createNetwork(numComps, pids, fd) == -1) {
+        printf("Failed to create network\n");
+        exit(1);
+    }
 
-    // UI process
+    // UI process (parent)
     if(pids[0] == getpid()) {
 
         const int pidIndex = 0;
@@ -124,12 +126,6 @@ int main(int argc, char* args[]){
 
         bool haveData = false;
         bool waitForReply = false;
-
-        // Intorduce token to ring
-//        token.dest = 3;
-//        strcpy(token.data, "test message");
-//        waitForReply = true;
-//        passToken(fd[writeIndex][WRITE], &token);
 
         while(1) {
 
@@ -155,12 +151,6 @@ int main(int argc, char* args[]){
                         break;
 
                     case EMPTY:
-//                        if(haveData) {
-//                            token.dest = userInput.dest;
-//                            strcpy(token.data, userInput.str);
-//                            waitForReply = true;
-//                            haveData = false;
-//                        }
                         break;
                 }
 
@@ -195,7 +185,7 @@ int main(int argc, char* args[]){
                     // Spawn user input thread
                     if((threadStatus = pthread_create(&thread, NULL, getUserInput, (void *) &userInput)) != 0) {
                         fprintf(stderr, "Thread create error %d: %s\n", threadStatus, strerror(threadStatus));
-                        // TODO exit maybe?
+                        exit(1);
                     }
                     threadSpawned = true;
                 }
@@ -235,34 +225,15 @@ int main(int argc, char* args[]){
 
                     default:
                         break;
-
-//                    case EMPTY:
-//                        if(haveData) {
-//                            token.dest = userInput.dest;
-//                            strcpy(token.data, userInput.str);
-//                            waitForReply = true;
-//                        }
-//                        break;
                 }
-
-//                printf("Node %d:\n", pidIndex);
-//                printf("\ttoken.dest = %d\n", token.dest);
-//                printf("\ttoken.data = %s", token.data);
 
                 printf("\tPassing token -- ");
                 printf("token.dest = %d, .data = %s\n", token.dest, token.data);
 
                 passToken(fd[writeIndex][WRITE], &token);
             }
-
         }
     }
-
-    free(pids);
-    for(int i=0; i < numComps; i++) {
-        free(fd[i]);
-    }
-    free(fd);
 
     return 0;
 }
@@ -292,34 +263,59 @@ void *getUserInput(void *arg) {
     // Set falg to show thread has finished
     userInputDone = true;
 
-//    printf("UI: ui.dest = %d\t.str = %s\n", userInput->dest, userInput->str);
-
     return NULL;
 }
 
 /**
+ * Check if token is being sent to this desination.
  *
+ * param *token - pointer to token to check
+ *
+ * return status of token. Indecates how the node should handle the
+ * token before passing.
  */
 tkn_stat_t checkToken(token_t *token) {
+
+    // If token is being sent to parent node
     if(token->dest == 0) {
+
+        // If token doesn't have any data
         if(strlen(token->data) == 0) {
+
+            // Token is empty and should be passed w/o doing anything
             return EMPTY;
         }
+
+        // Token is going back to parent node
         return RETURNING;
     }
+
+    // Token has data and is going to destination node
     return FULL;
 }
 
 /**
+ * Convert actual PID to virtual PID. This is done by searching the given PID table.
+ * Searching is done in a linear fashion, O(len).
  *
+ * param *pids - table of PIDs to search
+ * param len - number of entries in PID table
+ *
+ * return processes virtual PID used by the simulation, -1 if not found
  */
 int pidToIndex(pid_t *pids, int len) {
     pid_t pid = getpid();
     for(int i=0; i < len; i++) {
+
+        // If PID is found in table
         if(pids[i] == pid) {
+
+            // Return the virtual PID
             return i;
         }
     }
+
+    // If PID was not in table
     return -1;
 }
 
@@ -334,6 +330,7 @@ int pidToIndex(pid_t *pids, int len) {
  */
 int createNetwork(int len, pid_t *pids, int **fd) {
 
+    // Need at least 2 computers to make a network
     if(len < 2) {
         printf("A network must have at least two computers\n");
         return -1;
@@ -475,7 +472,8 @@ int spawn(int len, pid_t *pids) {
 }
 
 /**
- * Closes pipes that are inherrited by processes that the process should not interact with.
+ * Closes pipes that are inherrited by processes that the process should
+ * not interact with.
  *
  * param *pids - table of virtual PIDs to accual PID
  * param **fd - 2D array of file descriptors for pipes
