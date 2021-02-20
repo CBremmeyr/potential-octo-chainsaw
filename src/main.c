@@ -145,7 +145,7 @@ int main(int argc, char* args[]){
 
                     case FULL:
                         if(token.dest == pidIndex){
-                            printf("PID = %d : This is for me\n\t\"%s\"\n", pidIndex, token.data);
+                            printf("This is for me:\t\"%s\"\n", pidIndex, token.data);
                             token.dest = 0;
                         }
                         break;
