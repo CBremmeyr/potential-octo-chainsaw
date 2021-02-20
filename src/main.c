@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #define READ 0
 #define WRITE 1
@@ -48,6 +49,8 @@ int passToken(int writeFd, token_t *token);
 int pidToIndex(pid_t *pids, int len);
 
 void *getUserInput(void *arg);
+
+void sigHandler(int sig);
 
 volatile bool userInputDone;
 
@@ -111,7 +114,7 @@ int main(int argc, char* args[]){
         const int writeIndex = pidIndex;
         const int readIndex = numComps-1;
         bool threadSpawned = false;
-        userInputDone = true;
+        userInputDone = false;
 
         pthread_t thread;
         int threadStatus;
@@ -123,15 +126,19 @@ int main(int argc, char* args[]){
         bool waitForReply = false;
 
         // Intorduce token to ring
-        token.dest = 0;
-        strcpy(token.data, "");
-        passToken(fd[writeIndex][WRITE], &token);
+//        token.dest = 3;
+//        strcpy(token.data, "test message");
+//        waitForReply = true;
+//        passToken(fd[writeIndex][WRITE], &token);
 
         while(1) {
 
             // Try to get token
             // If token was recived
             if(getTokenNB(fd[readIndex][READ], &token) == 0) {
+
+                printf("Node %d: recived token -- ", pidIndex);
+                printf("token.dest = %d, .data = %s\n", token.dest, token.data);
 
                 switch(checkToken(&token)){
                     case RETURNING:
@@ -148,13 +155,18 @@ int main(int argc, char* args[]){
                         break;
 
                     case EMPTY:
-                        if(haveData) {
-                            token.dest = userInput.dest;
-                            strcpy(token.data, userInput.str);
-                            waitForReply = true;
-                        }
+//                        if(haveData) {
+//                            token.dest = userInput.dest;
+//                            strcpy(token.data, userInput.str);
+//                            waitForReply = true;
+//                            haveData = false;
+//                        }
                         break;
                 }
+
+                printf("\tPassing token -- ");
+                printf("token.dest = %d, .data = %s\n", token.dest, token.data);
+
                 passToken(fd[writeIndex][WRITE], &token);
             }
 
@@ -168,6 +180,14 @@ int main(int argc, char* args[]){
                     if(userInputDone) {
                         pthread_join(thread, NULL);
                         threadSpawned = false;
+                        haveData = true;
+                        userInputDone = false;
+
+                        token.dest = userInput.dest;
+                        strcpy(token.data, userInput.str);
+
+                        passToken(fd[writeIndex][WRITE], &token);
+                        waitForReply = true;
                     }
                 }
                 else {
@@ -255,22 +275,24 @@ int main(int argc, char* args[]){
  * return NULL (needed to work with pthreads)
  */
 void *getUserInput(void *arg) {
-    userInput_t userInput = *((userInput_t *) arg);
+    userInput_t *userInput = (userInput_t *) arg;
     char tempStr[MAX_STR_LEN] = {0};
 
     // Prompt user for node to send message to
     do {
-        printf("Enter destination node (1 to %d): ", userInput.nodeCount-1);
+        printf("Enter destination node (1 to %d): ", userInput->nodeCount-1);
         fgets(tempStr, MAX_STR_LEN, stdin);
-        userInput.dest = atoi(tempStr);
-    } while(userInput.dest < 1 || userInput.dest > userInput.nodeCount-1);
+        userInput->dest = atoi(tempStr);
+    } while(userInput->dest < 1 || userInput->dest > userInput->nodeCount-1);
 
     // Promp user for messsage to send
     printf("Enter message to send (max %d chars):\n", MAX_STR_LEN);
-    fgets(userInput.str, MAX_STR_LEN, stdin);
+    fgets(userInput->str, MAX_STR_LEN, stdin);
 
     // Set falg to show thread has finished
     userInputDone = true;
+
+//    printf("UI: ui.dest = %d\t.str = %s\n", userInput->dest, userInput->str);
 
     return NULL;
 }
@@ -331,6 +353,9 @@ int createNetwork(int len, pid_t *pids, int **fd) {
     // Make network out of pipes
     fixPipeLeaks(pids, fd, len);
 
+    // Set SIGINT handler for all processes
+    signal(SIGINT, sigHandler);
+
     return 0;
 }
 
@@ -349,10 +374,6 @@ int getToken(int readFd, token_t *token) {
     if(s != sizeof(token_t)) {
         return -1;
     }
-
-    // Print to track token's path
-//    printf("PID = %d : getting token\t", getpid());
-//    printf("Token.dest = %d, .data = %s\n", token->dest, token->data);
 
     return 0;
 }
@@ -393,13 +414,11 @@ int getTokenNB(int readFd, token_t *token) {
         // Read rest of data
         char *temp = ((char *) token) + s;
         read(readFd, (void *) temp, sizeof(token_t)-s);
-        printf("getTokenNB() partial read\n");
         return 0;
     }
 
     // Restore original pipe flags
     fcntl(readFd, F_SETFL, flags);
-    printf("getTokenNB() full read\n");
     return 0;
 }
 
@@ -414,11 +433,6 @@ int getTokenNB(int readFd, token_t *token) {
 int passToken(int writeFd, token_t *token) {
 
     sleep(1);
-
-    // Print to track token's path
-    printf("---passToken() %d ---\n", getpid());
-//    printf("PID = %d : passing token\t", getpid());
-//    printf("Token.dest = %d, .data = %s\n", token->dest, token->data);
 
     // Write to pipe
     size_t s = write(writeFd, (const void *) token, sizeof(token_t));
@@ -495,5 +509,15 @@ void fixPipeLeaks(pid_t *pids, int **fd, int len) {
             }
         }
     }
+}
+
+/**
+ *  Have process exit on SIGINT
+ *
+ *  param sig - unused
+ */
+void sigHandler(int sig) {
+    printf("PID = %d: goodbye\n", getpid());
+    exit(0);
 }
 
