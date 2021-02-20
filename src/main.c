@@ -35,7 +35,7 @@ typedef struct {
     char str[MAX_STR_LEN];
 } userInput_t;
 
-typdef enum TKN_STAT{EMPTY, FULL, RETURNING} tkn_stat_t;
+typedef enum TKN_STAT{EMPTY, FULL, RETURNING} tkn_stat_t;
 
 int createNetwork(int len, pid_t *pids, int **fd);
 int spawn(int len, pid_t *pids);
