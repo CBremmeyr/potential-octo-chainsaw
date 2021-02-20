@@ -130,10 +130,10 @@ int main(int argc, char* args[]){
         while(1) {
 
             // Try to get token
-            // If token was recived
+            // If token was received
             if(getTokenNB(fd[readIndex][READ], &token) == 0) {
 
-                printf("Node %d: recived token -- ", pidIndex);
+                printf("Node %d: received token -- ", pidIndex);
                 printf("token.dest = %d, .data = %s\n", token.dest, token.data);
 
                 switch(checkToken(&token)){
@@ -206,7 +206,7 @@ int main(int argc, char* args[]){
             // Wait to receive token
             if(getToken(fd[readIndex][READ], &token) == 0) {
 
-                printf("Node %d: recived token -- ", pidIndex);
+                printf("Node %d: received token -- ", pidIndex);
                 printf("token.dest = %d, .data = %s\n", token.dest, token.data);
 
                 switch(checkToken(&token)){
@@ -360,7 +360,7 @@ int createNetwork(int len, pid_t *pids, int **fd) {
  * Read token from pipe (blocking)
  *
  * param readFd - pipe file descriptor to read from
- * param *token - location to store token recived from pipe
+ * param *token - location to store token received from pipe
  *
  * return 0 on success, -1 if not all data was passed
  */
@@ -379,7 +379,7 @@ int getToken(int readFd, token_t *token) {
  * Read token from pipe (non-blocking)
  *
  * param readFd - pipe file descriptor to read from
- * param *token - location to store token recived from pipe
+ * param *token - location to store token received from pipe
  *
  * return 0 on success, -1 if no data was read
  */
