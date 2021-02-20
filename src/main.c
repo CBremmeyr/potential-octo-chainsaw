@@ -107,9 +107,6 @@ int main(int argc, char* args[]){
     // UI process
     if(pids[0] == getpid()) {
 
-        token.dest = 3;
-        strcpy(token.data, "hello there pdidy, how you doin' ;)");
-
         const int pidIndex = 0;
         const int writeIndex = pidIndex;
         const int readIndex = numComps-1;
@@ -125,6 +122,11 @@ int main(int argc, char* args[]){
         bool haveData = false;
         bool waitForReply = false;
 
+        // Intorduce token to ring
+        token.dest = 0;
+        strcpy(token.data, "");
+        passToken(fd[writeIndex][WRITE], &token);
+
         while(1) {
 
             // Try to get token
@@ -139,8 +141,8 @@ int main(int argc, char* args[]){
                         break;
 
                     case FULL:
-                        if(token.dest == pids[pidIndex]){
-                            printf("PID = %d : This is for me\n\t\"%s\"\n", pids[pidIndex], token.data);
+                        if(token.dest == pidIndex){
+                            printf("PID = %d : This is for me\n\t\"%s\"\n", pidIndex, token.data);
                             token.dest = 0;
                         }
                         break;
@@ -187,19 +189,52 @@ int main(int argc, char* args[]){
         const int pidIndex = pidToIndex(pids, numComps);
         const int writeIndex = pidIndex;
         const int readIndex = pidIndex-1;
+        bool waitForReply = false;
 
         while(1) {
 
             // Wait to receive token
-            while(getToken(fd[readIndex][READ], &token) != 0);
+            if(getToken(fd[readIndex][READ], &token) == 0) {
 
-            // Process token
-            if(token.dest == getpid()) {
-                printf("%s", token.data);
+                printf("Node %d: recived token -- ", pidIndex);
+                printf("token.dest = %d, .data = %s\n", token.dest, token.data);
+
+                switch(checkToken(&token)){
+                    case RETURNING:
+                        if(waitForReply) {
+                            strcpy(token.data, "");
+                        }
+                        break;
+
+                    case FULL:
+                        if(token.dest == pidIndex){
+                            printf("PID = %d : This is for me\n\t\"%s\"\n", pidIndex, token.data);
+                            token.dest = 0;
+                        }
+                        break;
+
+                    default:
+                        break;
+
+//                    case EMPTY:
+//                        if(haveData) {
+//                            token.dest = userInput.dest;
+//                            strcpy(token.data, userInput.str);
+//                            waitForReply = true;
+//                        }
+//                        break;
+                }
+
+//                printf("Node %d:\n", pidIndex);
+//                printf("\ttoken.dest = %d\n", token.dest);
+//                printf("\ttoken.data = %s", token.data);
+
+                printf("\tPassing token -- ");
+                printf("token.dest = %d, .data = %s\n", token.dest, token.data);
+
+                passToken(fd[writeIndex][WRITE], &token);
             }
 
-            // Give token to next node
-            passToken(fd[writeIndex][WRITE], &token);
         }
     }
 
@@ -225,10 +260,10 @@ void *getUserInput(void *arg) {
 
     // Prompt user for node to send message to
     do {
-        printf("Enter destination node (0 to %d): ", userInput.nodeCount);
+        printf("Enter destination node (1 to %d): ", userInput.nodeCount-1);
         fgets(tempStr, MAX_STR_LEN, stdin);
         userInput.dest = atoi(tempStr);
-    } while(userInput.dest < userInput.nodeCount);
+    } while(userInput.dest < 1 || userInput.dest > userInput.nodeCount-1);
 
     // Promp user for messsage to send
     printf("Enter message to send (max %d chars):\n", MAX_STR_LEN);
@@ -342,7 +377,7 @@ int getTokenNB(int readFd, token_t *token) {
     ssize_t s = read(readFd, (void *) token, sizeof(token_t));
 
     // If no data was read
-    if(s == 0) {
+    if(s <= 0) {
 
         // Restore original pipe flags
         fcntl(readFd, F_SETFL, flags);
@@ -358,11 +393,13 @@ int getTokenNB(int readFd, token_t *token) {
         // Read rest of data
         char *temp = ((char *) token) + s;
         read(readFd, (void *) temp, sizeof(token_t)-s);
+        printf("getTokenNB() partial read\n");
         return 0;
     }
 
     // Restore original pipe flags
     fcntl(readFd, F_SETFL, flags);
+    printf("getTokenNB() full read\n");
     return 0;
 }
 
@@ -379,6 +416,7 @@ int passToken(int writeFd, token_t *token) {
     sleep(1);
 
     // Print to track token's path
+    printf("---passToken() %d ---\n", getpid());
 //    printf("PID = %d : passing token\t", getpid());
 //    printf("Token.dest = %d, .data = %s\n", token->dest, token->data);
 
